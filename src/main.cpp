@@ -4,6 +4,7 @@
 // config globals
 int g_port = 8080;
 const char* g_root = ".";
+const char* g_assets = "assets";
 uint32_t g_bind = 0; // INADDR_ANY
 bool g_quiet = false;
 bool g_nozip = false;
@@ -74,7 +75,7 @@ void add_to_zip(int client, const char* real_path, const char* zip_path, zip_cd_
         if (fd < 0) return;
 
         uint32_t file_crc = 0;
-        char fbuf[4096];
+        char fbuf[65536];
         ssize_t rn;
         while ((rn = sys_read(fd, fbuf, sizeof(fbuf))) > 0) {
             file_crc = crc32(fbuf, rn, file_crc);
@@ -288,7 +289,11 @@ void serve(int client, struct sockaddr_in* addr) {
     while (*p == '/') p++;
     
     char target[512];
-    build_path(target, g_root, p[0] == '\0' ? "." : p);
+    if (strncmp(p, "assets/", 7) == 0) {
+        build_path(target, g_assets, p + 7);
+    } else {
+        build_path(target, g_root, p[0] == '\0' ? "." : p);
+    }
 
     int fd = sys_open(target, O_RDONLY);
     if (fd < 0) {
@@ -331,11 +336,7 @@ void serve(int client, struct sockaddr_in* addr) {
                 sys_write(client, sbuf, strlen(sbuf));
                 sys_write(client, "\r\n\r\n", 4);
 
-                char fbuf[4096];
-                ssize_t rn;
-                while ((rn = sys_read(fd, fbuf, sizeof(fbuf))) > 0) {
-                    sys_write(client, fbuf, rn);
-                }
+                sys_sendfile(client, fd, 0, st.st_size);
                 sys_close(fd);
             }
         } else {

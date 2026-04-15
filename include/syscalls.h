@@ -61,7 +61,12 @@ static inline long syscall6(long n, long a1, long a2, long a3, long a4, long a5,
 #define SYS_accept 43
 #define SYS_bind 49
 #define SYS_listen 50
+#define SYS_sendfile 40
 #define SYS_exit 60
+
+static inline ssize_t sys_sendfile(int out_fd, int in_fd, off_t* offset, size_t count) {
+    return (ssize_t)syscall4(SYS_sendfile, out_fd, in_fd, (long)offset, count);
+}
 
 #define SYS_setsockopt 54
 

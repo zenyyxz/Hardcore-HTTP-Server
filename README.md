@@ -23,9 +23,10 @@ To support directory downloads, I implemented the ZIP file format specification 
 ## Features
 - Zero dependencies. No libc, no headers beyond the kernel interface.
 - Custom assembly entry point for x86_64 Linux.
-- Static file serving with MIME type detection.
+- Zero-copy file transfers using the `sendfile` syscall for maximum throughput.
+- Static file serving with MIME type detection and global asset resolution.
 - Dynamic HTML directory listings with embedded SVG icons.
-- On-the-fly ZIP streaming for directory downloads.
+- On-the-fly ZIP streaming with optimized 64KB buffering.
 - High-performance, synchronous I/O.
 
 ## Build and Run
