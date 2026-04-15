@@ -14,6 +14,7 @@ extern "C" {
     char* itoa(int n, char* s, int base);
     uint32_t crc32(const void* data, size_t n, uint32_t seed);
     uint32_t parse_ip(const char* s);
+    void url_decode(char* str);
 }
 
 void print(const char* s);

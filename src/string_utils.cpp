@@ -102,6 +102,33 @@ extern "C" {
         return ~crc;
     }
 
+    void url_decode(char* str) {
+        char* d = str;
+        char* s = str;
+        while (*s) {
+            if (*s == '%' && s[1] && s[2]) {
+                int h1 = -1, h2 = -1;
+                char c1 = s[1];
+                if (c1 >= '0' && c1 <= '9') h1 = c1 - '0';
+                else if (c1 >= 'a' && c1 <= 'f') h1 = c1 - 'a' + 10;
+                else if (c1 >= 'A' && c1 <= 'F') h1 = c1 - 'A' + 10;
+                
+                char c2 = s[2];
+                if (c2 >= '0' && c2 <= '9') h2 = c2 - '0';
+                else if (c2 >= 'a' && c2 <= 'f') h2 = c2 - 'a' + 10;
+                else if (c2 >= 'A' && c2 <= 'F') h2 = c2 - 'A' + 10;
+
+                if (h1 != -1 && h2 != -1) {
+                    *d++ = (char)((h1 << 4) | h2);
+                    s += 3;
+                    continue;
+                }
+            }
+            *d++ = *s++;
+        }
+        *d = '\0';
+    }
+
     uint32_t parse_ip(const char* s) {
         uint32_t res = 0;
         for (int i = 0; i < 4; i++) {

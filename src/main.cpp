@@ -285,6 +285,8 @@ void serve(int client, struct sockaddr_in* addr) {
         *q = '\0';
     }
 
+    url_decode(path);
+
     int status = 200;
     const char* p = path;
     while (*p == '/') p++;
