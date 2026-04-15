@@ -120,4 +120,10 @@ static inline int sys_accept(int sockfd, struct sockaddr* addr, socklen_t* addrl
     return (int)syscall3(SYS_accept, sockfd, (long)addr, (long)addrlen);
 }
 
+#define SYS_rt_sigaction 13
+
+static inline int sys_rt_sigaction(int signum, const struct kernel_sigaction* act, struct kernel_sigaction* oldact, size_t sigsetsize) {
+    return (int)syscall4(SYS_rt_sigaction, signum, (long)act, (long)oldact, sigsetsize);
+}
+
 #endif

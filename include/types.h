@@ -84,6 +84,18 @@ struct linux_dirent64 {
 
 // Stat macros
 #define S_ISDIR(m) (((m) & 0170000) == 0040000)
+
+// Signals
+#define SIGPIPE 13
+#define SIG_IGN ((void (*)(int))1)
+
+struct kernel_sigaction {
+    void (*k_sa_handler)(int);
+    unsigned long sa_flags;
+    void (*sa_restorer)(void);
+    uint64_t sa_mask;
+};
+
 // ZIP format structures
 struct zip_local_header {
     uint32_t signature;      // 0x04034b50

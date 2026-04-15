@@ -361,7 +361,14 @@ void serve(int client, struct sockaddr_in* addr) {
                 sys_write(client, sbuf, strlen(sbuf));
                 sys_write(client, "\r\n\r\n", 4);
 
-                sys_sendfile(client, fd, 0, st.st_size);
+                off_t offset = 0;
+                int64_t remaining = st.st_size;
+                while (remaining > 0) {
+                    size_t chunk = (remaining > 1073741824) ? 1073741824 : remaining;
+                    ssize_t sent = sys_sendfile(client, fd, &offset, chunk);
+                    if (sent <= 0) break;
+                    remaining -= sent;
+                }
                 sys_close(fd);
             }
         } else {
@@ -410,6 +417,11 @@ int str_to_int(const char* s) {
 }
 
 extern "C" int main(int argc, char** argv) {
+    struct kernel_sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.k_sa_handler = SIG_IGN;
+    sys_rt_sigaction(SIGPIPE, &sa, NULL, 8);
+
     // poor man's getopt
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
