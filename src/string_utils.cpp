@@ -109,3 +109,15 @@ void print_ip(uint32_t ip) {
         if (i < 3) print(".");
     }
 }
+
+uint32_t crc32(const void* data, size_t n, uint32_t seed) {
+    uint32_t crc = ~seed;
+    const uint8_t* p = (const uint8_t*)data;
+    while (n--) {
+        crc ^= *p++;
+        for (int i = 0; i < 8; i++) {
+            crc = (crc >> 1) ^ (0xEDB88320 & (-(crc & 1)));
+        }
+    }
+    return ~crc;
+}

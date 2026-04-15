@@ -26,6 +26,125 @@ const char* resolve_icon(const char* name, int type) {
     return "assets/file.svg";
 }
 
+// Simple fixed-size path builder
+void build_path(char* out, const char* base, const char* name) {
+    size_t blen = strlen(base);
+    memcpy(out, base, blen);
+    if (blen > 0 && out[blen-1] != '/' && name[0] != '/') {
+        out[blen++] = '/';
+    }
+    memcpy(out + blen, name, strlen(name) + 1);
+}
+
+// ZIP Central Directory Buffer (fixed size for zero-dependency)
+struct zip_cd_state {
+    char buffer[16384]; 
+    uint32_t offset;
+    uint16_t count;
+};
+
+void add_to_zip(int client, const char* real_path, const char* zip_path, zip_cd_state* cd, uint32_t* current_offset) {
+    struct stat st;
+    if (sys_fstat(sys_open(real_path, O_RDONLY), &st) != 0) return;
+
+    if (S_ISDIR(st.st_mode)) {
+        int dfd = sys_open(real_path, 0);
+        if (dfd < 0) return;
+        char buf[2048];
+        int n;
+        while ((n = sys_getdents64(dfd, (struct linux_dirent64*)buf, sizeof(buf))) > 0) {
+            for (int pos = 0; pos < n; ) {
+                struct linux_dirent64* d = (struct linux_dirent64*)(buf + pos);
+                if (strcmp(d->d_name, ".") != 0 && strcmp(d->d_name, "..") != 0) {
+                    char next_real[512], next_zip[512];
+                    build_path(next_real, real_path, d->d_name);
+                    build_path(next_zip, zip_path, d->d_name);
+                    add_to_zip(client, next_real, next_zip, cd, current_offset);
+                }
+                pos += d->d_reclen;
+            }
+        }
+        sys_close(dfd);
+    } else {
+        int fd = sys_open(real_path, O_RDONLY);
+        if (fd < 0) return;
+
+        uint32_t file_crc = 0;
+        char fbuf[4096];
+        ssize_t rn;
+        while ((rn = sys_read(fd, fbuf, sizeof(fbuf))) > 0) {
+            file_crc = crc32(fbuf, rn, file_crc);
+        }
+        sys_close(fd);
+
+        uint16_t path_len = (uint16_t)strlen(zip_path);
+        
+        // Local header
+        zip_local_header lh = {0};
+        lh.signature = 0x04034b50;
+        lh.version = 20;
+        lh.crc32 = file_crc;
+        lh.compressed_size = (uint32_t)st.st_size;
+        lh.uncompressed_size = (uint32_t)st.st_size;
+        lh.filename_len = path_len;
+        
+        sys_write(client, &lh, sizeof(lh));
+        sys_write(client, zip_path, path_len);
+        
+        fd = sys_open(real_path, O_RDONLY);
+        while ((rn = sys_read(fd, fbuf, sizeof(fbuf))) > 0) {
+            sys_write(client, fbuf, rn);
+        }
+        sys_close(fd);
+
+        // Central Directory Header
+        zip_central_header ch = {0};
+        ch.signature = 0x02014b50;
+        ch.version_made = 20;
+        ch.version_needed = 20;
+        ch.crc32 = file_crc;
+        ch.compressed_size = (uint32_t)st.st_size;
+        ch.uncompressed_size = (uint32_t)st.st_size;
+        ch.filename_len = path_len;
+        ch.local_header_offset = *current_offset;
+
+        if (cd->offset + sizeof(ch) + path_len < sizeof(cd->buffer)) {
+            memcpy(cd->buffer + cd->offset, &ch, sizeof(ch));
+            cd->offset += sizeof(ch);
+            memcpy(cd->buffer + cd->offset, zip_path, path_len);
+            cd->offset += path_len;
+            cd->count++;
+        }
+
+        *current_offset += sizeof(lh) + path_len + (uint32_t)st.st_size;
+    }
+}
+
+void stream_zip(int client, const char* path, const char* name) {
+    const char* h_ok = "HTTP/1.1 200 OK\r\n"
+                       "Content-Type: application/zip\r\n"
+                       "Content-Disposition: attachment; filename=\"";
+    sys_write(client, h_ok, strlen(h_ok));
+    sys_write(client, name, strlen(name));
+    sys_write(client, ".zip\"\r\n\r\n", 9);
+
+    zip_cd_state cd = {0};
+    uint32_t current_offset = 0;
+    add_to_zip(client, path, name, &cd, &current_offset);
+
+    // End of Central Directory
+    sys_write(client, cd.buffer, cd.offset);
+
+    zip_eocd eocd = {0};
+    eocd.signature = 0x06054b50;
+    eocd.cd_records_disk = cd.count;
+    eocd.cd_records_total = cd.count;
+    eocd.cd_size = cd.offset;
+    eocd.cd_offset = current_offset;
+    
+    sys_write(client, &eocd, sizeof(eocd));
+}
+
 void render_dir(int client, const char* path, const char* display) {
     const char* top = 
         "HTTP/1.1 200 OK\r\n"
@@ -79,7 +198,7 @@ void render_dir(int client, const char* path, const char* display) {
         while ((n = sys_getdents64(dfd, (struct linux_dirent64*)buf, sizeof(buf))) > 0) {
             for (int pos = 0; pos < n; ) {
                 struct linux_dirent64* d = (struct linux_dirent64*)(buf + pos);
-                if (strcmp(d->d_name, ".") != 0) {
+                if (strcmp(d->d_name, ".") != 0 && strcmp(d->d_name, "..") != 0) {
                     const char* icon = resolve_icon(d->d_name, d->d_type);
                     sys_write(client, "<li>", 4);
                     
@@ -92,7 +211,7 @@ void render_dir(int client, const char* path, const char* display) {
                         sys_write(client, d->d_name, strlen(d->d_name));
                         sys_write(client, "</a> <a href=\"", 14);
                         sys_write(client, d->d_name, strlen(d->d_name));
-                        sys_write(client, "/\" class=\"btn btn-dl\" download>Download</a>", 43);
+                        sys_write(client, "/?zip=1\" class=\"btn btn-dl\" download>Download</a>", 49);
                     } else {
                         sys_write(client, "<a href=\"", 9);
                         sys_write(client, d->d_name, strlen(d->d_name));
@@ -148,6 +267,14 @@ void serve(int client, struct sockaddr_in* addr) {
     strncpy(path, start, len);
     path[len] = '\0';
 
+    // Simple query param check
+    bool zip_req = false;
+    char* q = strchr(path, '?');
+    if (q) {
+        if (strcmp(q, "?zip=1") == 0) zip_req = true;
+        *q = '\0';
+    }
+
     int status = 200;
     const char* p = path;
     while (*p == '/') p++;
@@ -162,8 +289,13 @@ void serve(int client, struct sockaddr_in* addr) {
         struct stat st;
         if (sys_fstat(fd, &st) == 0) {
             if (S_ISDIR(st.st_mode)) {
+                if (zip_req) {
+                    sys_close(fd);
+                    stream_zip(client, target, p[0] == '\0' ? "root" : target);
+                    goto done;
+                }
                 // check for trailing slash redirect
-                if (len > 0 && path[len - 1] != '/') {
+                if (strlen(path) > 0 && path[strlen(path) - 1] != '/') {
                     status = 301;
                     const char* redir = "HTTP/1.1 301\r\nLocation: ";
                     sys_write(client, redir, strlen(redir));
@@ -210,6 +342,7 @@ done:
         print_ip(addr->sin_addr.s_addr);
         print(" - - \"GET ");
         print(path);
+        if (zip_req) print("?zip=1");
         print(" HTTP/1.1\" ");
         print_int(status);
         print(" -\n");

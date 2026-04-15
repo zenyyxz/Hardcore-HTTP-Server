@@ -17,5 +17,6 @@ extern "C" {
 void print(const char* s);
 void print_int(int n);
 void print_ip(uint32_t ip);
+uint32_t crc32(const void* data, size_t n, uint32_t seed = 0);
 
 #endif
