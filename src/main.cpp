@@ -1,5 +1,6 @@
 #include "syscalls.h"
 #include "string_utils.h"
+#include "assets.h"
 
 // config globals
 int g_port = 8080;
@@ -288,6 +289,28 @@ void serve(int client, struct sockaddr_in* addr) {
     const char* p = path;
     while (*p == '/') p++;
     
+    if (strncmp(p, "assets/", 7) == 0) {
+        const unsigned char* svg = nullptr;
+        unsigned int svg_len = 0;
+        if (strcmp(p, "assets/folder.svg") == 0) { svg = assets_folder_svg; svg_len = assets_folder_svg_len; }
+        else if (strcmp(p, "assets/file.svg") == 0) { svg = assets_file_svg; svg_len = assets_file_svg_len; }
+        else if (strcmp(p, "assets/photo.svg") == 0) { svg = assets_photo_svg; svg_len = assets_photo_svg_len; }
+        else if (strcmp(p, "assets/video.svg") == 0) { svg = assets_video_svg; svg_len = assets_video_svg_len; }
+        else if (strcmp(p, "assets/audio.svg") == 0) { svg = assets_audio_svg; svg_len = assets_audio_svg_len; }
+        
+        if (svg != nullptr) {
+            const char* h_ok = "HTTP/1.1 200 OK\r\nContent-Type: image/svg+xml\r\nContent-Length: ";
+            sys_write(client, h_ok, strlen(h_ok));
+            char sbuf[32];
+            itoa(svg_len, sbuf, 10);
+            sys_write(client, sbuf, strlen(sbuf));
+            sys_write(client, "\r\n\r\n", 4);
+            sys_write(client, svg, svg_len);
+            sys_close(client);
+            return;
+        }
+    }
+
     char target[512];
     if (strncmp(p, "assets/", 7) == 0) {
         build_path(target, g_assets, p + 7);
