@@ -7,11 +7,12 @@ SRC_CPP = src/main.cpp src/string_utils.cpp
 SRC_ASM = src/start.S
 OBJ = src/main.o src/start.o src/string_utils.o
 
-TARGET = http_server
+TARGET = bin/http_server
 
 all: $(TARGET)
 
 $(TARGET): $(OBJ)
+	mkdir -p bin
 	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJ) -static
 
 src/main.o: src/main.cpp include/syscalls.h include/types.h

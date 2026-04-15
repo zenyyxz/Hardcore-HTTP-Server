@@ -33,7 +33,7 @@ The build process is as minimal as the code. You only need a compiler and `make`
 
 ```bash
 make
-./http_server -p 8080 -d ./public
+./bin/http_server -p 8080 -d ./public
 ```
 
 ### Options
