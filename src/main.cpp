@@ -1,8 +1,12 @@
 #include "syscalls.h"
 #include "string_utils.h"
 
-// Hardcoded for now, maybe move to args later?
-#define PORT 8080
+// config globals
+int g_port = 8080;
+const char* g_root = ".";
+uint32_t g_bind = 0; // INADDR_ANY
+bool g_quiet = false;
+bool g_nozip = false;
 
 // quick check for file extensions
 bool has_extension(const char* s, const char* ext) {
@@ -209,9 +213,13 @@ void render_dir(int client, const char* path, const char* display) {
                         sys_write(client, icon, strlen(icon));
                         sys_write(client, "\" class=\"ico\"> ", 15);
                         sys_write(client, d->d_name, strlen(d->d_name));
-                        sys_write(client, "</a> <a href=\"", 14);
-                        sys_write(client, d->d_name, strlen(d->d_name));
-                        sys_write(client, "/?zip=1\" class=\"btn btn-dl\" download>Download</a>", 49);
+                        sys_write(client, "</a>", 4);
+                        
+                        if (!g_nozip) {
+                            sys_write(client, " <a href=\"", 10);
+                            sys_write(client, d->d_name, strlen(d->d_name));
+                            sys_write(client, "/?zip=1\" class=\"btn btn-dl\" download>Download</a>", 49);
+                        }
                     } else {
                         sys_write(client, "<a href=\"", 9);
                         sys_write(client, d->d_name, strlen(d->d_name));
@@ -271,14 +279,16 @@ void serve(int client, struct sockaddr_in* addr) {
     bool zip_req = false;
     char* q = strchr(path, '?');
     if (q) {
-        if (strcmp(q, "?zip=1") == 0) zip_req = true;
+        if (!g_nozip && strcmp(q, "?zip=1") == 0) zip_req = true;
         *q = '\0';
     }
 
     int status = 200;
     const char* p = path;
     while (*p == '/') p++;
-    const char* target = (p[0] == '\0') ? "." : p;
+    
+    char target[512];
+    build_path(target, g_root, p[0] == '\0' ? "." : p);
 
     int fd = sys_open(target, O_RDONLY);
     if (fd < 0) {
@@ -291,7 +301,7 @@ void serve(int client, struct sockaddr_in* addr) {
             if (S_ISDIR(st.st_mode)) {
                 if (zip_req) {
                     sys_close(fd);
-                    stream_zip(client, target, p[0] == '\0' ? "root" : target);
+                    stream_zip(client, target, p[0] == '\0' ? "root" : p);
                     goto done;
                 }
                 // check for trailing slash redirect
@@ -338,7 +348,7 @@ void serve(int client, struct sockaddr_in* addr) {
 
 done:
     // py-style logging
-    if (!has_extension(path, ".svg")) {
+    if (!g_quiet && !has_extension(path, ".svg")) {
         print_ip(addr->sin_addr.s_addr);
         print(" - - \"GET ");
         print(path);
@@ -350,7 +360,51 @@ done:
     sys_close(client);
 }
 
+void show_help(const char* prog) {
+    print("Usage: ");
+    print(prog);
+    print(" [options]\n\n");
+    print("Options:\n");
+    print("  -p <port>  Port to listen on (default: 8080)\n");
+    print("  -d <dir>   Root directory to serve (default: .)\n");
+    print("  -i <addr>  IP address to bind to (default: 0.0.0.0)\n");
+    print("  -q         Quiet mode (no access logs)\n");
+    print("  -n         Disable directory ZIP downloads\n");
+    print("  -v         Show version info\n");
+    print("  -h         Show this help message\n");
+}
+
+int str_to_int(const char* s) {
+    int res = 0;
+    while (*s >= '0' && *s <= '9') {
+        res = res * 10 + (*s - '0');
+        s++;
+    }
+    return res;
+}
+
 extern "C" int main(int argc, char** argv) {
+    // poor man's getopt
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) {
+            g_port = str_to_int(argv[++i]);
+        } else if (strcmp(argv[i], "-d") == 0 && i + 1 < argc) {
+            g_root = argv[++i];
+        } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
+            g_bind = parse_ip(argv[++i]);
+        } else if (strcmp(argv[i], "-q") == 0) {
+            g_quiet = true;
+        } else if (strcmp(argv[i], "-n") == 0) {
+            g_nozip = true;
+        } else if (strcmp(argv[i], "-v") == 0) {
+            print("RawServe v0.2 - baked with syscalls\n");
+            return 0;
+        } else if (strcmp(argv[i], "-h") == 0) {
+            show_help(argv[0]);
+            return 0;
+        }
+    }
+
     int sfd = sys_socket(AF_INET, SOCK_STREAM, 0);
     if (sfd < 0) return 1;
 
@@ -360,8 +414,8 @@ extern "C" int main(int argc, char** argv) {
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT);
-    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons(g_port);
+    addr.sin_addr.s_addr = g_bind;
 
     if (sys_bind(sfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         print("Error: bind failed\n");
@@ -373,9 +427,15 @@ extern "C" int main(int argc, char** argv) {
         return 1;
     }
 
-    print("Server listening on port ");
-    print_int(PORT);
-    print("...\n");
+    if (!g_quiet) {
+        print("Server listening on ");
+        print(g_root);
+        print(" at ");
+        print_ip(g_bind);
+        print(":");
+        print_int(g_port);
+        print("...\n");
+    }
 
     while (true) {
         struct sockaddr_in caddr;

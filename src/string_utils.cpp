@@ -89,6 +89,32 @@ extern "C" {
         }
         return s;
     }
+
+    uint32_t crc32(const void* data, size_t n, uint32_t seed) {
+        uint32_t crc = ~seed;
+        const uint8_t* p = (const uint8_t*)data;
+        while (n--) {
+            crc ^= *p++;
+            for (int i = 0; i < 8; i++) {
+                crc = (crc >> 1) ^ (0xEDB88320 & (-(crc & 1)));
+            }
+        }
+        return ~crc;
+    }
+
+    uint32_t parse_ip(const char* s) {
+        uint32_t res = 0;
+        for (int i = 0; i < 4; i++) {
+            uint32_t val = 0;
+            while (*s >= '0' && *s <= '9') {
+                val = val * 10 + (*s - '0');
+                s++;
+            }
+            res |= (val << (i * 8));
+            if (*s == '.') s++;
+        }
+        return res;
+    }
 }
 
 void print(const char* s) {
@@ -108,16 +134,4 @@ void print_ip(uint32_t ip) {
         print(buf);
         if (i < 3) print(".");
     }
-}
-
-uint32_t crc32(const void* data, size_t n, uint32_t seed) {
-    uint32_t crc = ~seed;
-    const uint8_t* p = (const uint8_t*)data;
-    while (n--) {
-        crc ^= *p++;
-        for (int i = 0; i < 8; i++) {
-            crc = (crc >> 1) ^ (0xEDB88320 & (-(crc & 1)));
-        }
-    }
-    return ~crc;
 }

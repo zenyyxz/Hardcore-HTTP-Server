@@ -12,11 +12,12 @@ extern "C" {
     char* strchr(const char* s, int c);
     char* strncpy(char* dest, const char* src, size_t n);
     char* itoa(int n, char* s, int base);
+    uint32_t crc32(const void* data, size_t n, uint32_t seed);
+    uint32_t parse_ip(const char* s);
 }
 
 void print(const char* s);
 void print_int(int n);
 void print_ip(uint32_t ip);
-uint32_t crc32(const void* data, size_t n, uint32_t seed = 0);
 
 #endif
